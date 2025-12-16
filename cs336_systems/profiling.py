@@ -34,8 +34,9 @@ def make_random_dataset(num_tokens: int, vocab_size: int) -> np.ndarray:
     random_array = np.random.randint(0, vocab_size-1, size=num_tokens)
     return random_array
 
-def bench_model_time(model_size, context_length: int, num_tokens: int, vocab_size: int, w: int, n: int, mode="both", device=None):
+def bench_model_time(model_size, context_length: int, num_tokens: int, vocab_size: int, w: int, n: int, mode="both", device=None, mixed=False):
     d_model, d_ff, num_layers, num_heads=model_size
+    new_dtype=torch.bfloat16
 
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -75,8 +76,13 @@ def bench_model_time(model_size, context_length: int, num_tokens: int, vocab_siz
 
         if mode!="backward":
             t0 = timer()
-            logits = lm_model(x)
-            loss_per_token = cs336_basics.nn_utils.cross_entropy(logits, y)
+            if mixed:
+                with torch.autocast(device_type=device, dtype=new_dtype):
+                    logits = lm_model(x)
+                    loss_per_token = cs336_basics.nn_utils.cross_entropy(logits, y)
+            else:
+                logits = lm_model(x)
+                loss_per_token = cs336_basics.nn_utils.cross_entropy(logits, y)
             torch.cuda.synchronize() if x.is_cuda else None
             t1 = timer() - t0
             forward_times.append(t1)
@@ -88,7 +94,11 @@ def bench_model_time(model_size, context_length: int, num_tokens: int, vocab_siz
 
         if mode!="forward":
             t0 = timer()
-            loss.backward()
+            if mixed:
+                with torch.autocast(device_type=device, dtype=new_dtype):
+                    loss.backward()
+            else:
+                loss.backward()
             torch.cuda.synchronize() if x.is_cuda else None
             t1 = timer() - t0
             backward_times.append(t1)
@@ -113,9 +123,9 @@ def bench_model_time(model_size, context_length: int, num_tokens: int, vocab_siz
     return forward_times, backward_times
 
 if __name__ == "__main__":
-    bench_model_time((16, 32, 2, 2), 16, 10000, 10000, 2, 4)
-    #bench_model_time((768,3072,12,12),256,100000,10000, 5, 10)
-    #bench_model_time((1024, 4096, 24, 16), 256, 100000, 10000, 5, 10)
-    #bench_model_time((1280, 5120, 36, 20), 256, 100000, 10000, 5, 10)
-    #bench_model_time((1600, 6400, 48, 25), 256, 100000, 10000, 5, 10)
-    #bench_model_time((2560, 10240, 32, 32), 256, 100000, 10000, 5, 10)
+    bench_model_time((16, 32, 2, 2), 16, 10000, 10000, 2, 4, mixed=True)
+    #bench_model_time((768,3072,12,12),256,100000,10000, 5, 10, mixed=True)
+    #bench_model_time((1024, 4096, 24, 16), 256, 100000, 10000, 5, 10, mixed=True)
+    #bench_model_time((1280, 5120, 36, 20), 256, 100000, 10000, 5, 10, mixed=True)
+    #bench_model_time((1600, 6400, 48, 25), 256, 100000, 10000, 5, 10, mixed=True)
+    #bench_model_time((2560, 10240, 32, 32), 256, 100000, 10000, 5, 10, mixed=True)
