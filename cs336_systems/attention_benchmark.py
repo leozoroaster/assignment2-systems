@@ -9,7 +9,7 @@ import timeit
 import pickle
 
 
-def bench_attention(batch_size, device=None):
+def bench_attention(batch_size, JIT=False, device=None):
     timer = timeit.default_timer
     forward_times = dict()
     backward_times = dict()
@@ -23,6 +23,10 @@ def bench_attention(batch_size, device=None):
 
     print(device)
 
+    attn=cs336_basics.model.scaled_dot_product_attention
+    if JIT:
+        attn=torch.compile(attn)
+
     for d_model in d_models:
         for seq_length in seq_lengths:
             Q = torch.rand(batch_size, seq_length, d_model, device=device, requires_grad=True)
@@ -30,7 +34,7 @@ def bench_attention(batch_size, device=None):
             V = torch.rand(batch_size, seq_length, d_model, device=device, requires_grad=True)
 
             for t in range(5):
-                O =cs336_basics.model.scaled_dot_product_attention(Q,K,V)
+                O =attn(Q,K,V)
                 loss = torch.pow(O,2).sum()
                 loss.backward()
                 Q.grad = None; K.grad = None; V.grad = None
@@ -39,7 +43,7 @@ def bench_attention(batch_size, device=None):
 
             t0 = timer()
             for t in range(100):
-                O =cs336_basics.model.scaled_dot_product_attention(Q,K,V)
+                O =attn(Q,K,V)
                 torch.cuda.synchronize()
             t1 = timer() - t0
             print(f"forward time of d_model {d_model} seq_length {seq_length} is {t1}")
@@ -49,7 +53,7 @@ def bench_attention(batch_size, device=None):
 
             t0 = timer()
             for t in range(100):
-                O = cs336_basics.model.scaled_dot_product_attention(Q, K, V)
+                O = attn(Q, K, V)
                 loss = torch.pow(O, 2).sum()
                 loss.backward()
                 torch.cuda.synchronize()
@@ -63,4 +67,6 @@ def bench_attention(batch_size, device=None):
     return forward_times, backward_times
 
 if __name__ == "__main__":
-    bench_attention(8)
+    bench_attention(8, JIT=True)
+    #bench_attention=torch.compile(bench_attention)
+    #bench_attention(8, JIT=True)
