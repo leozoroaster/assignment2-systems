@@ -8,9 +8,6 @@ import torch
 import timeit
 import pickle
 
-LM=cs336_basics.model.Linear(2,3)
-print(LM.weight)
-
 def initiate_model(vocab_size: int,
         context_length: int,
         d_model: int,
