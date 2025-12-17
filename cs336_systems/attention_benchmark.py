@@ -45,6 +45,8 @@ def bench_attention(batch_size, device=None):
             print(f"forward time of d_model {d_model} seq_length {seq_length} is {t1}")
             forward_times[(d_model,seq_length)]=t1
 
+            torch.cuda.memory._record_memory_history(max_entries=1000000)
+
             t0 = timer()
             for t in range(100):
                 O = cs336_basics.model.scaled_dot_product_attention(Q, K, V)
@@ -54,6 +56,9 @@ def bench_attention(batch_size, device=None):
             t1 = timer() - t0
             print(f"backward time of d_model {d_model} seq_length {seq_length} is {t1}")
             backward_times[(d_model, seq_length)] = t1
+
+            torch.cuda.memory._dump_snapshot(f"memory_snapshot_forward_{d_model}_{seq_length}.pickle")
+            torch.cuda.memory._record_memory_history(enabled=None)
 
     return forward_times, backward_times
 
