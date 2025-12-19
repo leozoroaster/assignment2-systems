@@ -18,6 +18,7 @@ def flash_fwd_kernel(
     D: tl.constexpr,
     Q_TILE_SIZE: tl.constexpr,
     K_TILE_SIZE: tl.constexpr,
+    is_causal: tl.constexpr,
 ):
     # Program indices
     query_tile_index = tl.program_id(0)
@@ -31,7 +32,7 @@ def flash_fwd_kernel(
         strides=(stride_qq, stride_qd),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
         block_shape=(Q_TILE_SIZE, D),
-        order=(1, 0),
+        order=(0, 1),
     )
 
     K_block_ptr = tl.make_block_ptr(
@@ -40,7 +41,7 @@ def flash_fwd_kernel(
         strides=(stride_kk, stride_kd),
         offsets=(0, 0),
         block_shape=(K_TILE_SIZE, D),
-        order=(1, 0),
+        order=(0, 1),
     )
 
     V_block_ptr = tl.make_block_ptr(
@@ -49,7 +50,7 @@ def flash_fwd_kernel(
         strides=(stride_vk, stride_vd),
         offsets=(0, 0),
         block_shape=(K_TILE_SIZE, D),
-        order=(1, 0),
+        order=(0, 1),
     )
 
     O_block_ptr = tl.make_block_ptr(
@@ -58,7 +59,7 @@ def flash_fwd_kernel(
         strides=(stride_oq, stride_od),
         offsets=(query_tile_index * Q_TILE_SIZE, 0),
         block_shape=(Q_TILE_SIZE, D),
-        order=(1, 0),
+        order=(0, 1),
     )
 
     L_block_ptr = tl.make_block_ptr(
@@ -87,9 +88,26 @@ def flash_fwd_kernel(
         Vj = tl.load(V_block_ptr, boundary_check=(0,1), padding_option="zero").to(tl.float32)
 
         # compute Sij, reusing S
-        S = tl.dot(Qi , tl.trans(Kj))
-        #S = tl.sum(Qi[:, :, None] * Kj[None, :, :], axis=1).to(tl.float32)
+        #S = tl.dot(Qi , tl.trans(Kj))
+        S=tl.sum(Qi[:,:,None]*tl.trans(Kj)[None,:,:], axis=1)
         S = S *scale
+
+        #check query key index
+        starting_column = j * K_TILE_SIZE
+        column_index = starting_column + tl.arange(0, K_TILE_SIZE)[None, :]
+        starting_row = query_tile_index * Q_TILE_SIZE
+        row_index = starting_row + tl.arange(0, Q_TILE_SIZE)[:, None]
+        k_in = column_index < N_KEYS
+        q_in = row_index < N_QUERIES
+        final_mask=k_in & q_in
+
+        #casual mask, the upper triangle (w.o. diag) of the global S should be set as -inf
+        #that is, for row<column we set as -inf
+        if is_causal:
+            causal=column_index<=row_index
+            final_mask=final_mask & causal
+
+        S=tl.where(final_mask,S,-float("inf"))
 
         #compute mi
         S_row_max = tl.max(S, axis=1)
@@ -104,8 +122,8 @@ def flash_fwd_kernel(
 
         # compute Oi
         Pi = Pi.to(Vj.dtype)
-        Oi = Oi * expm[:,None] + tl.dot(Pi , Vj)
-        #Oi = Oi * expm[:, None] + tl.sum(Pi[:, :, None] * Vj[None, :, :], axis=1).to(tl.float32)
+        #Oi = Oi * expm[:,None] + tl.dot(Pi , Vj)
+        Oi = Oi * expm[:, None] + tl.sum(Pi[:,:,None] *Vj[None,:,:], axis=1)
 
         # update mi
         mi = new_mi
@@ -124,12 +142,7 @@ def flash_fwd_kernel(
 
 class FlashAttention(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, Q, K, V, Bq = 16, Bk = 16, scale=None, is_causal=False):
-        # initialize Bq, Bk
-        if not isinstance(Bq, int) or Bq <= 0:
-            Bq = 16
-        if not isinstance(Bk, int) or Bk <= 0:
-            Bk = 16
+    def forward(ctx, Q, K, V, is_causal=False):
 
         # dimensions
         d = Q.shape[-1]
@@ -140,9 +153,10 @@ class FlashAttention(torch.autograd.Function):
         for n in batch_shape:
             batch_size*=n
 
-        #initialize scale
-        if scale is None:
-            scale=1/math.sqrt(d)
+        #initialize scale, Bq, Bk
+        Bq=16
+        Bk=16
+        scale=1/math.sqrt(d)
 
         #initialize O,L
         O = torch.empty(*batch_shape, Nq, d, device=Q.device, dtype=torch.float32)
@@ -153,6 +167,7 @@ class FlashAttention(torch.autograd.Function):
         ctx.Q_TILE_SIZE=Bq
         ctx.K_TILE_SIZE = Bk
         ctx.D = d
+        ctx.is_causal = is_causal
 
         #flash attention
         flash_fwd_kernel[(math.ceil(Nq/ctx.Q_TILE_SIZE),batch_size)](
@@ -168,6 +183,7 @@ class FlashAttention(torch.autograd.Function):
             d,
             Bq,
             Bk,
+            is_causal,
         )
 
         return O
