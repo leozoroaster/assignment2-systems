@@ -76,9 +76,39 @@ class FlashAttention(torch.autograd.Function):
             O[...,Bq*i:min(Nq,Bq*(i+1)),:] = O_i
             L[...,Bq*i:min(Nq,Bq*(i+1))] = L_i
 
-        ctx.save_for_backward(L)
+        ctx.save_for_backward(Q,K,V,O,L)
         return O
 
     @staticmethod
-    def backward(ctx, Q, K, V, O, dO, L):
+    def backward(ctx, dO):
+        Q, K, V, O, L = ctx.saved_tensors
+        #dims
+        d=Q.shape[-1]
+
+        #rowsum of O * dO
+        D=torch.sum(O * dO, dim=-1, keepdim=True)
+
+        #compute S
+        S= Q @ K.transpose(-2,-1) / math.sqrt(d)
+
+        #compute P
+        P = torch.exp(S-L.unsqueeze(-1))
+
+        #compute dV
+        dV=P.transpose(-2,-1) @ dO
+
+        #compute dP
+        dP=dO @ V.transpose(-2,-1)
+
+        #compute dS
+        dS=P * (dP- D)
+
+        #compute dQ
+        dQ=dS @ K /math.sqrt(d)
+
+        #compute dK
+        dK=dS.transpose(-2,-1) @ Q/math.sqrt(d)
+
+        return dQ, dK, dV, None
+
         raise NotImplementedError
