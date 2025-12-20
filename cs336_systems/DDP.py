@@ -48,6 +48,3 @@ if __name__ == "__main__":
         for data_size in data_sizes:
             for device_type in device_types:
                 bench_all_reduce(world_size, data_size, device_type)
-
-    for k, v in all_reduce_time.items():
-        print(k,v)
