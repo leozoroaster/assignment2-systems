@@ -10,7 +10,6 @@ def setup(rank, world_size, device_type="gloo"):
     dist.init_process_group(device_type, rank=rank, world_size=world_size)
 
 def distributed_demo(rank, world_size, data_size, device_type):
-    global all_reduce_time
     timer = timeit.default_timer
     setup(rank, world_size, device_type)
 
