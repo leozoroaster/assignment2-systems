@@ -50,12 +50,31 @@ def ddp_training(rank, x_dataset, y_dataset, loss, num_epoches, world_size, devi
         local_loss.backward()
 
         #all reduce gradient
+        #with torch.no_grad():
+            #for p in local_model.parameters():
+                #if p.grad is None:
+                    #continue
+                #dist.all_reduce(p.grad, op=dist.ReduceOp.SUM)
+                #p.grad.div_(world_size)
+
+        #all reduce flattened gradient
         with torch.no_grad():
+            flattened_grad=[]
             for p in local_model.parameters():
-                if p.grad is None:
-                    continue
-                dist.all_reduce(p.grad, op=dist.ReduceOp.SUM)
-                p.grad.div_(world_size)
+                if p.grad is not None:
+                    flattened_grad.append(p.grad.contiguous().view(-1))
+
+            flattened_grad=torch.concat(flattened_grad)
+
+            dist.all_reduce(flattened_grad, op=dist.ReduceOp.SUM)
+            flattened_grad.div_(world_size)
+
+            index=0
+            for p in local_model.parameters():
+                if p.grad is not None:
+                    length=p.grad.numel()
+                    p.grad.copy_(flattened_grad[index:index+length].view_as(p.grad))
+                    index+=length
 
         #opt step
         local_optimizer.step()
