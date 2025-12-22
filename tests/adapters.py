@@ -56,6 +56,8 @@ def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
     Returns:
         Instance of a DDP class.
     """
+    from cs336_systems.distributed_ddp import DDP
+    return DDP(module)
     # For example: return DDPIndividualParameters(module)
     raise NotImplementedError
 
@@ -71,6 +73,10 @@ def ddp_individual_parameters_on_after_backward(ddp_model: torch.nn.Module, opti
         optimizer: torch.optim.Optimizer
             Optimizer being used with the DDP-wrapped model.
     """
+    ddp_model.finish_gradient_synchronization()
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    return
     # For example: ddp_model.finish_gradient_synchronization()
     raise NotImplementedError
 
