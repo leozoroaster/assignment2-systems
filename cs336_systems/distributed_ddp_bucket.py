@@ -46,9 +46,10 @@ class DDPBucket(nn.Module):
                 curr_bucket=Bucket(len(self.curr_bucket))
                 for param in self.curr_bucket:
                     self.p2b[param]=curr_bucket
+                for param in self.curr_bucket:
+                    param.register_post_accumulate_grad_hook(self.prepare_grad)
                 self.curr_bytes = 0
                 self.curr_bucket = []
-            p.register_post_accumulate_grad_hook(self.prepare_grad)
 
         if len(self.curr_bucket)>0:
             curr_bucket=Bucket(len(self.curr_bucket))
