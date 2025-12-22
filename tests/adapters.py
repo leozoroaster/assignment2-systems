@@ -99,6 +99,8 @@ def get_ddp_bucketed(module: torch.nn.Module, bucket_size_mb: float) -> torch.nn
     Returns:
         Instance of a DDP class.
     """
+    from cs336_systems.distributed_ddp_bucket import DDPBucket
+    return DDPBucket(module, bucket_size_mb)
     raise NotImplementedError
 
 
@@ -113,6 +115,10 @@ def ddp_bucketed_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.
         optimizer: torch.optim.Optimizer
             Optimizer being used with the DDP-wrapped model.
     """
+    ddp_model.finish_gradient_synchronization()
+    #optimizer.step()
+    #optimizer.zero_grad(set_to_none=True)
+    return
     # For example: ddp_model.finish_gradient_synchronization()
     raise NotImplementedError
 
@@ -127,6 +133,8 @@ def ddp_bucketed_on_train_batch_start(ddp_model: torch.nn.Module, optimizer: tor
         optimizer: torch.optim.Optimizer
             Optimizer being used with the DDP-wrapped model.
     """
+    optimizer.zero_grad(set_to_none=True)
+    return
     raise NotImplementedError
 
 
