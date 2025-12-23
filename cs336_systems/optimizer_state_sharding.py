@@ -21,7 +21,7 @@ class OSS(optim.Optimizer):
 
         self.param_groups = []
 
-        super().__init__(self.global_params, {})
+        super().__init__(self.local_params, {})
 
         # initialize optimizer
         self.local_optimizer = optimizer_cls(self.param_groups, **kwargs)
